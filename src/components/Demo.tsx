@@ -1,730 +1,528 @@
 "use client";
 
-import { useEffect, useCallback, useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "../components/ui/input";
-import { signIn, signOut, getCsrfToken } from "next-auth/react";
-import sdk, {
-  AddFrame,
-  FrameNotificationDetails,
-  SignIn as SignInCore,
-  type Context,
-} from "@farcaster/frame-sdk";
-import {
-  useAccount,
-  useSendTransaction,
-  useSignMessage,
-  useSignTypedData,
-  useWaitForTransactionReceipt,
-  useDisconnect,
-  useConnect,
-  useSwitchChain,
-  useChainId,
-} from "wagmi";
+import { Button } from "../components/ui/Button";
+import { Label } from "../components/ui/label";
+import { getScheduleTable } from "../scraper";
 
-import { config } from "~/components/providers/WagmiProvider";
-import { Button } from "~/components/ui/Button";
-import { truncateAddress } from "~/lib/truncateAddress";
-import { base, degen, mainnet, optimism, unichain } from "wagmi/chains";
-import { BaseError, UserRejectedRequestError } from "viem";
-import { useSession } from "next-auth/react";
-import { createStore } from "mipd";
-import { Label } from "~/components/ui/label";
+export default function Demo({ title }: { title?: string } = { title: "Colorado College Course Search" }) {
+  
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTerm, setSelectedTerm] = useState("all");
+  const [selectedBlock, setSelectedBlock] = useState("all");
+  const [selectedProgram, setSelectedProgram] = useState("all");
+  const [table, setTable] = useState<string | null | undefined>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [tableRows, setTableRows] = useState<Element[]>([]);
+  const [filteredRows, setFilteredRows] = useState<Element[]>([]);
+  const rowsPerPage = 20;
 
-export default function Demo(
-  { title }: { title?: string } = { title: "Frames v2 Demo" }
-) {
-  const [isSDKLoaded, setIsSDKLoaded] = useState(false);
-  const [context, setContext] = useState<Context.FrameContext>();
-  const [isContextOpen, setIsContextOpen] = useState(false);
-  const [txHash, setTxHash] = useState<string | null>(null);
+  // Academic terms options
+  const terms = [
+    { value: "all", label: "All Terms" },
+    { value: "2024-2025", label: "2024-2025 Academic Year" },
+    { value: "fall2024", label: "Fall 2024" },
+    { value: "spring2025", label: "Spring 2025" },
+    { value: "spring2026", label: "Spring 2026" }
+  ];
 
-  const [added, setAdded] = useState(false);
-  const [notificationDetails, setNotificationDetails] =
-    useState<FrameNotificationDetails | null>(null);
-
-  const [lastEvent, setLastEvent] = useState("");
-
-  const [addFrameResult, setAddFrameResult] = useState("");
-  const [sendNotificationResult, setSendNotificationResult] = useState("");
-
-  useEffect(() => {
-    setNotificationDetails(context?.client.notificationDetails ?? null);
-  }, [context]);
-
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-
-  const {
-    sendTransaction,
-    error: sendTxError,
-    isError: isSendTxError,
-    isPending: isSendTxPending,
-  } = useSendTransaction();
-
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({
-      hash: txHash as `0x${string}`,
-    });
-
-  const {
-    signTypedData,
-    error: signTypedError,
-    isError: isSignTypedError,
-    isPending: isSignTypedPending,
-  } = useSignTypedData();
-
-  const { disconnect } = useDisconnect();
-  const { connect } = useConnect();
-
-  const {
-    switchChain,
-    error: switchChainError,
-    isError: isSwitchChainError,
-    isPending: isSwitchChainPending,
-  } = useSwitchChain();
-
-  const nextChain = useMemo(() => {
-    if (chainId === base.id) {
-      return optimism;
-    } else if (chainId === optimism.id) {
-      return degen;
-    } else if (chainId === degen.id) {
-      return mainnet;
-    } else if (chainId === mainnet.id) {
-      return unichain;
-    } else {
-      return base;
-    }
-  }, [chainId]);
-
-  const handleSwitchChain = useCallback(() => {
-    switchChain({ chainId: nextChain.id });
-  }, [switchChain, nextChain.id]);
+  // Block options
+  const blocks = [
+    { value: "all", label: "All Blocks" },
+    { value: "block1", label: "Block 1" },
+    { value: "block2", label: "Block 2" },
+    { value: "block3", label: "Block 3" },
+    { value: "block4", label: "Block 4" },
+    { value: "block5", label: "Block 5" },
+    { value: "block6", label: "Block 6" },
+    { value: "block7", label: "Block 7" },
+    { value: "block8", label: "Block 8" }
+  ];
+  
+  // Program options from the original dropdown
+  const programs = [
+    { value: "all", label: "All Programs" },
+    { value: "Anthropology", label: "Anthropology" },
+    { value: "Arabic", label: "Arabic" },
+    { value: "ArtHistory", label: "Art History" },
+    { value: "ArtStudio", label: "Art Studio" },
+    { value: "AsianStudies", label: "Asian Studies" },
+    { value: "BusinessEconomicsSociety", label: "Business, Economics, & Society" },
+    { value: "ChemistryBiochemistry", label: "Chemistry & Biochemistry" },
+    { value: "ChineseLanguage", label: "Chinese Language" },
+    { value: "Classics", label: "Classics" },
+    { value: "ComparativeLiterature", label: "Comparative Literature" },
+    { value: "ComputerScience", label: "Computer Science" },
+    { value: "DanceStudio", label: "Dance Studio" },
+    { value: "DanceTheory", label: "Dance Theory" },
+    { value: "Economics", label: "Economics" },
+    { value: "Education", label: "Education" },
+    { value: "English", label: "English" },
+    { value: "EnvironmentalProgram", label: "Environmental Program" },
+    { value: "FeministandGenderStudies", label: "Feminist and Gender Studies" },
+    { value: "FilmStudies", label: "Film Studies" },
+    { value: "FilmandMedia", label: "Film and Media" },
+    { value: "FirstYearFoundations", label: "First Year Foundations" },
+    { value: "French", label: "French" },
+    { value: "GeneralStudies", label: "General Studies" },
+    { value: "Geology", label: "Geology" },
+    { value: "German", label: "German" },
+    { value: "Hebrew", label: "Hebrew" },
+    { value: "History", label: "History" },
+    { value: "HumanBiologyandKinesiology", label: "Human Biology and Kinesiology" },
+    { value: "Italian", label: "Italian" },
+    { value: "Japanese", label: "Japanese" },
+    { value: "Mathematics", label: "Mathematics" },
+    { value: "MolecularBiology", label: "Molecular Biology" },
+    { value: "MuseumStudies", label: "Museum Studies" },
+    { value: "Music", label: "Music" },
+    { value: "OrganismalBiologyEcology", label: "Organismal Biology & Ecology" },
+    { value: "Philosophy", label: "Philosophy" },
+    { value: "Physics", label: "Physics" },
+    { value: "PoliticalScience", label: "Political Science" },
+    { value: "Portuguese", label: "Portuguese" },
+    { value: "Psychology", label: "Psychology" },
+    { value: "RaceEthnicityandMigrationStudies", label: "Race, Ethnicity, and Migration Studies" },
+    { value: "Religion", label: "Religion" },
+    { value: "Russian", label: "Russian" },
+    { value: "RussianandEurasianStudies", label: "Russian and Eurasian Studies" },
+    { value: "Sociology", label: "Sociology" },
+    { value: "SouthwestStudies", label: "Southwest Studies" },
+    { value: "Spanish", label: "Spanish" },
+    { value: "StudiesinHumanities", label: "Studies in Humanities" },
+    { value: "StudiesinNaturalSciences", label: "Studies in Natural Sciences" },
+    { value: "Theatre", label: "Theatre" }
+  ];
 
   useEffect(() => {
-    const load = async () => {
-      const context = await sdk.context;
-      setContext(context);
-      setAdded(context.client.added);
-
-      sdk.on("frameAdded", ({ notificationDetails }) => {
-        setLastEvent(
-          `frameAdded${!!notificationDetails ? ", notifications enabled" : ""}`
-        );
-
-        setAdded(true);
-        if (notificationDetails) {
-          setNotificationDetails(notificationDetails);
+    async function fetchData() {
+      try {
+        setIsLoading(true);
+        const tableData = await getScheduleTable();
+        setTable(tableData);
+        console.log("Scraped table:", tableData);
+        
+        // Parse the table HTML and extract rows
+        if (tableData) {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(`<table>${tableData}</table>`, 'text/html');
+          const rows = Array.from(doc.querySelectorAll('tr'));
+          setTableRows(rows);
+          setFilteredRows(rows); // Initially, filtered rows are the same as all rows
         }
-      });
-
-      sdk.on("frameAddRejected", ({ reason }) => {
-        setLastEvent(`frameAddRejected, reason ${reason}`);
-      });
-
-      sdk.on("frameRemoved", () => {
-        setLastEvent("frameRemoved");
-        setAdded(false);
-        setNotificationDetails(null);
-      });
-
-      sdk.on("notificationsEnabled", ({ notificationDetails }) => {
-        setLastEvent("notificationsEnabled");
-        setNotificationDetails(notificationDetails);
-      });
-      sdk.on("notificationsDisabled", () => {
-        setLastEvent("notificationsDisabled");
-        setNotificationDetails(null);
-      });
-
-      sdk.on("primaryButtonClicked", () => {
-        console.log("primaryButtonClicked");
-      });
-
-      console.log("Calling ready");
-      sdk.actions.ready({});
-
-      // Set up a MIPD Store, and request Providers.
-      const store = createStore();
-
-      // Subscribe to the MIPD Store.
-      store.subscribe((providerDetails) => {
-        console.log("PROVIDER DETAILS", providerDetails);
-        // => [EIP6963ProviderDetail, EIP6963ProviderDetail, ...]
-      });
-    };
-    if (sdk && !isSDKLoaded) {
-      console.log("Calling load");
-      setIsSDKLoaded(true);
-      load();
-      return () => {
-        sdk.removeAllListeners();
-      };
+      } catch (err) {
+        console.error("Error fetching table:", err);
+        setError("Failed to load course data");
+      } finally {
+        setIsLoading(false);
+      }
     }
-  }, [isSDKLoaded]);
 
-  const openUrl = useCallback(() => {
-    sdk.actions.openUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    fetchData();
   }, []);
 
-  const openWarpcastUrl = useCallback(() => {
-    sdk.actions.openUrl("https://warpcast.com/~/compose");
-  }, []);
-
-  const close = useCallback(() => {
-    sdk.actions.close();
-  }, []);
-
-  const addFrame = useCallback(async () => {
-    try {
-      setNotificationDetails(null);
-
-      const result = await sdk.actions.addFrame();
-
-      if (result.notificationDetails) {
-        setNotificationDetails(result.notificationDetails);
-      }
-      setAddFrameResult(
-        result.notificationDetails
-          ? `Added, got notificaton token ${result.notificationDetails.token} and url ${result.notificationDetails.url}`
-          : "Added, got no notification details"
-      );
-    } catch (error) {
-      if (error instanceof AddFrame.RejectedByUser) {
-        setAddFrameResult(`Not added: ${error.message}`);
-      }
-
-      if (error instanceof AddFrame.InvalidDomainManifest) {
-        setAddFrameResult(`Not added: ${error.message}`);
-      }
-
-      setAddFrameResult(`Error: ${error}`);
-    }
-  }, []);
-
-  const sendNotification = useCallback(async () => {
-    setSendNotificationResult("");
-    if (!notificationDetails || !context) {
+  // Modified search function that accepts term, block, and program parameters
+  const performSearch = (term: string, block: string, program: string) => {
+    console.log("Performing search - Term:", searchTerm, "Selected term:", term, "Selected block:", block, "Selected program:", program);
+    
+    // If search term is empty and all filters are "all", show all rows
+    if (!searchTerm.trim() && term === "all" && block === "all" && program === "all") {
+      setFilteredRows(tableRows);
+      setCurrentPage(1);
       return;
     }
-
-    try {
-      const response = await fetch("/api/send-notification", {
-        method: "POST",
-        mode: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fid: context.user.fid,
-          notificationDetails,
-        }),
-      });
-
-      if (response.status === 200) {
-        setSendNotificationResult("Success");
-        return;
-      } else if (response.status === 429) {
-        setSendNotificationResult("Rate limited");
-        return;
-      }
-
-      const data = await response.text();
-      setSendNotificationResult(`Error: ${data}`);
-    } catch (error) {
-      setSendNotificationResult(`Error: ${error}`);
-    }
-  }, [context, notificationDetails]);
-
-  const sendTx = useCallback(() => {
-    sendTransaction(
-      {
-        // call yoink() on Yoink contract
-        to: "0x4bBFD120d9f352A0BEd7a014bd67913a2007a878",
-        data: "0x9846cd9efc000023c0",
-      },
-      {
-        onSuccess: (hash) => {
-          setTxHash(hash);
-        },
-      }
-    );
-  }, [sendTransaction]);
-
-  const signTyped = useCallback(() => {
-    signTypedData({
-      domain: {
-        name: "Frames v2 Demo",
-        version: "1",
-        chainId,
-      },
-      types: {
-        Message: [{ name: "content", type: "string" }],
-      },
-      message: {
-        content: "Hello from Frames v2!",
-      },
-      primaryType: "Message",
+    
+    // Get header row (always include it)
+    const headerRow = tableRows.length > 0 ? [tableRows[0]] : [];
+    
+    // Filter data rows
+    const dataRows = tableRows.length > 0 ? tableRows.slice(1) : [];
+    const matchedRows = dataRows.filter(row => {
+      const rowText = row.textContent?.toLowerCase() || '';
+      
+      // Check keyword matches
+      const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k);
+      const keywordMatch = keywords.length === 0 || 
+        keywords.some(keyword => rowText.includes(keyword));
+      
+      // Check term match
+      const termMatch = term === "all" || 
+        checkTermMatch(rowText, term);
+        
+      // Check block match
+      const blockMatch = block === "all" || 
+        checkBlockMatch(rowText, block);
+      
+      // Check program match by looking for class="title program-XX"
+      const programMatch = program === "all" || 
+        checkProgramMatch(row, program);
+      
+      // Row must match all four filters: keyword, term, block, and program
+      return keywordMatch && termMatch && blockMatch && programMatch;
     });
-  }, [chainId, signTypedData]);
+    
+    // Combine header with matched rows
+    setFilteredRows([...headerRow, ...matchedRows]);
+    
+    // Reset to first page after search
+    setCurrentPage(1);
+  };
 
-  const toggleContext = useCallback(() => {
-    setIsContextOpen((prev) => !prev);
-  }, []);
+  // Form submission handler
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    performSearch(selectedTerm, selectedBlock, selectedProgram);
+  };
+  
+  // Handle term selection change - immediately perform search
+  const handleTermChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newTerm = e.target.value;
+    setSelectedTerm(newTerm);
+    
+    // Use the new value directly instead of relying on the state variable
+    setTimeout(() => {
+      performSearch(newTerm, selectedBlock, selectedProgram);
+    }, 0);
+  };
+  
+  // Handle block selection change - immediately perform search
+  const handleBlockChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newBlock = e.target.value;
+    setSelectedBlock(newBlock);
+    
+    // Use the new value directly instead of relying on the state variable
+    setTimeout(() => {
+      performSearch(selectedTerm, newBlock, selectedProgram);
+    }, 0);
+  };
+  
+  // Handle program selection change - immediately perform search
+  const handleProgramChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newProgram = e.target.value;
+    setSelectedProgram(newProgram);
+    
+    // Use the new value directly instead of relying on the state variable
+    setTimeout(() => {
+      performSearch(selectedTerm, selectedBlock, newProgram);
+    }, 0);
+  };
 
-  if (!isSDKLoaded) {
-    return <div>Loading...</div>;
-  }
+  // Handle search term changes
+  const handleSearchTermChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    // Uncomment the following lines to search immediately on every keystroke
+    setTimeout(() => {
+      performSearch(selectedTerm, selectedBlock, selectedProgram);
+    }, 300); // Debounce search for 300ms
+  };
+  
+  // Function to check if a row matches the selected term
+  const checkTermMatch = (rowText: string, term: string): boolean => {
+    // This is a simplified implementation. You'll need to adjust based on
+    // the actual format of the term information in your course data
+    switch(term) {
+      case "2024-2025":
+        return rowText.includes("2024") || rowText.includes("2025");
+      case "fall2024":
+        return rowText.includes("fall 2024") || 
+          (rowText.includes("fall") && rowText.includes("2024")) || 
+          rowText.includes("block 1 2024") || 
+          rowText.includes("block 2 2024") || 
+          rowText.includes("block 3 2024") || 
+          rowText.includes("block 4 2024");
+      case "spring2025":
+        return rowText.includes("spring 2025") || 
+          (rowText.includes("spring") && rowText.includes("2025")) || 
+          rowText.includes("block 5 2025") || 
+          rowText.includes("block 6 2025") || 
+          rowText.includes("block 7 2025") || 
+          rowText.includes("block 8 2025");
+      case "spring2026":
+        return rowText.includes("spring 2026") || 
+          (rowText.includes("spring") && rowText.includes("2026")) || 
+          rowText.includes("block 5 2026") || 
+          rowText.includes("block 6 2026") || 
+          rowText.includes("block 7 2026") || 
+          rowText.includes("block 8 2026");
+      default:
+        return true;
+    }
+  };
+  
+  // Function to check if a row matches the selected block
+  const checkBlockMatch = (rowText: string, block: string): boolean => {
+    switch(block) {
+      case "block1":
+        return rowText.includes("block 1") || rowText.includes("block1");
+      case "block2":
+        return rowText.includes("block 2") || rowText.includes("block2");
+      case "block3":
+        return rowText.includes("block 3") || rowText.includes("block3");
+      case "block4":
+        return rowText.includes("block 4") || rowText.includes("block4");
+      case "block5":
+        return rowText.includes("block 5") || rowText.includes("block5");
+      case "block6":
+        return rowText.includes("block 6") || rowText.includes("block6");
+      case "block7":
+        return rowText.includes("block 7") || rowText.includes("block7");
+      case "block8":
+        return rowText.includes("block 8") || rowText.includes("block8");
+      default:
+        return true;
+    }
+  };
+  
+  // Function to check if a row matches the selected program
+  const checkProgramMatch = (row: Element, program: string): boolean => {
+    // Look for elements with class="title program-XX" within the row
+    const titleElements = row.querySelectorAll('.title');
+    
+    // Check each title element for the program class
+    for (const element of Array.from(titleElements)) {
+      if (element.classList.contains(`program-${program}`)) {
+        return true;
+      }
+    }
+    
+    // Also check if row itself has class that matches program
+    if (row.classList.contains(`program-${program}`)) {
+      return true;
+    }
+    
+    // Check cell content as fallback - some programs might be identified by text only
+    const rowText = row.textContent || '';
+    if (rowText.includes(`(${program})`) || 
+        rowText.includes(`${program}-`) ||
+        rowText.match(new RegExp(`\\b${program}\\s+\\d`))) {
+      return true;
+    }
+    
+    return false;
+  };
+  
+  // Get header row
+  const headerRow = filteredRows.length > 0 ? filteredRows[0] : null;
+  
+  // Get data rows (excluding header)
+  const dataRows = filteredRows.length > 0 ? filteredRows.slice(1) : [];
+  
+  // Calculate total number of pages based on data rows (not including header)
+  const totalPages = Math.ceil(dataRows.length / rowsPerPage);
+  
+  // Get current page rows from data rows only
+  const getCurrentPageRows = () => {
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    return dataRows.slice(startIndex, endIndex);
+  };
+  
+  // Generate HTML for current page data rows
+  const currentPageHTML = getCurrentPageRows()
+    .map(row => row.outerHTML)
+    .join('');
+  
+  // Handle page navigation
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      // Scroll to top of table
+      document.getElementById('course-table')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   return (
-    <div
-      style={{
-        paddingTop: context?.client.safeAreaInsets?.top ?? 0,
-        paddingBottom: context?.client.safeAreaInsets?.bottom ?? 0,
-        paddingLeft: context?.client.safeAreaInsets?.left ?? 0,
-        paddingRight: context?.client.safeAreaInsets?.right ?? 0,
-      }}
-    >
-      <div className="w-[300px] mx-auto py-2 px-2">
-        <h1 className="text-2xl font-bold text-center mb-4">{title}</h1>
+    <div className="w-full max-w-6xl mx-auto py-8 px-4">
+      <h1 className="text-3xl font-bold text-center mb-8">Colorado College Course Search</h1>
+      
+      <form onSubmit={handleSearch} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="course-search" className="text-sm font-medium">
+            Search for courses
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="course-search"
+              type="text"
+              placeholder="Enter course name, department, or keyword..."
+              value={searchTerm}
+              onChange={handleSearchTermChange}
+              className="flex-1"
+            />
+            <Button type="submit">
+              Search
+            </Button>
+          </div>
+        </div>
 
-        <div className="mb-4">
-          <h2 className="font-2xl font-bold">Context</h2>
-          <button
-            onClick={toggleContext}
-            className="flex items-center gap-2 transition-colors"
-          >
-            <span
-              className={`transform transition-transform ${
-                isContextOpen ? "rotate-90" : ""
-              }`}
+        {/* Filter controls - all dropdowns in one line */}
+        <div className="flex flex-wrap gap-2 mt-4">
+          <div className="space-y-2 flex-1 min-w-[180px]">
+            <Label htmlFor="term-select" className="text-sm font-medium">
+              Filter by Term
+            </Label>
+            <select
+              id="term-select"
+              value={selectedTerm}
+              onChange={handleTermChange}
+              className="w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              ➤
-            </span>
-            Tap to expand
-          </button>
-
-          {isContextOpen && (
-            <div className="p-4 mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
-              <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-                {JSON.stringify(context, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-
-        <div>
-          <h2 className="font-2xl font-bold">Actions</h2>
-
-          <div className="mb-4">
-            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
-              <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-                sdk.actions.signIn
-              </pre>
-            </div>
-            <SignIn />
+              {terms.map((term) => (
+                <option key={term.value} value={term.value}>
+                  {term.label}
+                </option>
+              ))}
+            </select>
           </div>
-
-          <div className="mb-4">
-            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
-              <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-                sdk.actions.openUrl
-              </pre>
-            </div>
-            <Button onClick={openUrl}>Open Link</Button>
-          </div>
-
-          <div className="mb-4">
-            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
-              <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-                sdk.actions.openUrl
-              </pre>
-            </div>
-            <Button onClick={openWarpcastUrl}>Open Warpcast Link</Button>
-          </div>
-
-          <div className="mb-4">
-            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
-              <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-                sdk.actions.viewProfile
-              </pre>
-            </div>
-            <ViewProfile />
-          </div>
-
-          <div className="mb-4">
-            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
-              <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-                sdk.actions.close
-              </pre>
-            </div>
-            <Button onClick={close}>Close Frame</Button>
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <h2 className="font-2xl font-bold">Last event</h2>
-
-          <div className="p-4 mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
-            <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-              {lastEvent || "none"}
-            </pre>
-          </div>
-        </div>
-
-        <div>
-          <h2 className="font-2xl font-bold">Add to client & notifications</h2>
-
-          <div className="mt-2 mb-4 text-sm">
-            Client fid {context?.client.clientFid},
-            {added ? " frame added to client," : " frame not added to client,"}
-            {notificationDetails
-              ? " notifications enabled"
-              : " notifications disabled"}
-          </div>
-
-          <div className="mb-4">
-            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg my-2">
-              <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px] overflow-x-">
-                sdk.actions.addFrame
-              </pre>
-            </div>
-            {addFrameResult && (
-              <div className="mb-2 text-sm">
-                Add frame result: {addFrameResult}
-              </div>
-            )}
-            <Button onClick={addFrame} disabled={added}>
-              Add frame to client
-            </Button>
-          </div>
-
-          {sendNotificationResult && (
-            <div className="mb-2 text-sm">
-              Send notification result: {sendNotificationResult}
-            </div>
-          )}
-          <div className="mb-4">
-            <Button onClick={sendNotification} disabled={!notificationDetails}>
-              Send notification
-            </Button>
-          </div>
-        </div>
-
-        <div>
-          <h2 className="font-2xl font-bold">Wallet</h2>
-
-          {address && (
-            <div className="my-2 text-xs">
-              Address: <pre className="inline">{truncateAddress(address)}</pre>
-            </div>
-          )}
-
-          {chainId && (
-            <div className="my-2 text-xs">
-              Chain ID: <pre className="inline">{chainId}</pre>
-            </div>
-          )}
-
-          <div className="mb-4">
-            <Button
-              onClick={() =>
-                isConnected
-                  ? disconnect()
-                  : connect({ connector: config.connectors[0] })
-              }
+          
+          <div className="space-y-2 flex-1 min-w-[180px]">
+            <Label htmlFor="block-select" className="text-sm font-medium">
+              Filter by Block
+            </Label>
+            <select
+              id="block-select"
+              value={selectedBlock}
+              onChange={handleBlockChange}
+              className="w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              {isConnected ? "Disconnect" : "Connect"}
-            </Button>
+              {blocks.map((block) => (
+                <option key={block.value} value={block.value}>
+                  {block.label}
+                </option>
+              ))}
+            </select>
           </div>
-
-          <div className="mb-4">
-            <SignMessage />
+          
+          <div className="space-y-2 flex-1 min-w-[180px]">
+            <Label htmlFor="program-select" className="text-sm font-medium">
+              Filter by Program
+            </Label>
+            <select
+              id="program-select"
+              value={selectedProgram}
+              onChange={handleProgramChange}
+              className="w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {programs.map((program) => (
+                <option key={program.value} value={program.value}>
+                  {program.label}
+                </option>
+              ))}
+            </select>
           </div>
-
-          {isConnected && (
-            <>
-              <div className="mb-4">
-                <SendEth />
-              </div>
-              <div className="mb-4">
-                <Button
-                  onClick={sendTx}
-                  disabled={!isConnected || isSendTxPending}
-                  isLoading={isSendTxPending}
-                >
-                  Send Transaction (contract)
-                </Button>
-                {isSendTxError && renderError(sendTxError)}
-                {txHash && (
-                  <div className="mt-2 text-xs">
-                    <div>Hash: {truncateAddress(txHash)}</div>
-                    <div>
-                      Status:{" "}
-                      {isConfirming
-                        ? "Confirming..."
-                        : isConfirmed
-                        ? "Confirmed!"
-                        : "Pending"}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="mb-4">
-                <Button
-                  onClick={signTyped}
-                  disabled={!isConnected || isSignTypedPending}
-                  isLoading={isSignTypedPending}
-                >
-                  Sign Typed Data
-                </Button>
-                {isSignTypedError && renderError(signTypedError)}
-              </div>
-              <div className="mb-4">
-                <Button
-                  onClick={handleSwitchChain}
-                  disabled={isSwitchChainPending}
-                  isLoading={isSwitchChainPending}
-                >
-                  Switch to {nextChain.name}
-                </Button>
-                {isSwitchChainError && renderError(switchChainError)}
-              </div>
-            </>
-          )}
         </div>
-      </div>
+      </form>
+      
+      {isLoading && (
+        <div className="mt-8 text-center">Loading courses...</div>
+      )}
+      
+      {error && (
+        <div className="mt-8 text-center text-red-500">{error}</div>
+      )}
+      
+      {!isLoading && !error && !table && (
+        <div className="mt-8 text-center text-sm text-gray-500">
+          Enter a search term to find Colorado College courses
+        </div>
+      )}
+      
+      {!isLoading && !error && filteredRows.length > 0 && (
+        <>
+          <div id="course-table" className="mt-8 overflow-x-auto w-full">
+            <div className="w-full align-middle">
+              <div className="overflow-hidden border border-gray-200 rounded-lg">
+                <table className="w-full table-auto divide-y divide-gray-200">
+                  <thead>
+                    {headerRow && (
+                      <tr dangerouslySetInnerHTML={{ __html: headerRow.innerHTML }} />
+                    )}
+                  </thead>
+                  <tbody dangerouslySetInnerHTML={{ __html: currentPageHTML }} />
+                </table>
+              </div>
+            </div>
+          </div>
+          
+          {/* No results message */}
+          {dataRows.length === 0 && (searchTerm.trim() !== '' || selectedTerm !== 'all' || selectedBlock !== 'all' || selectedProgram !== 'all') && (
+            <div className="mt-4 text-center text-sm text-gray-500">
+              No courses found matching your search criteria. Try different keywords or filters.
+            </div>
+          )}
+          
+          {/* Results count */}
+          {dataRows.length > 0 && (
+            <div className="mt-4 text-sm text-gray-700 text-center">
+              Found <span className="font-medium">{dataRows.length}</span> courses
+              {selectedTerm !== 'all' && ` in ${terms.find(t => t.value === selectedTerm)?.label}`}
+              {selectedBlock !== 'all' && ` during ${blocks.find(b => b.value === selectedBlock)?.label}`}
+              {selectedProgram !== 'all' && ` in ${programs.find(p => p.value === selectedProgram)?.label}`}
+              {searchTerm && ` matching "${searchTerm}"`}
+            </div>
+          )}
+          
+          {/* Pagination - only show if we have data rows */}
+          {dataRows.length > 0 && totalPages > 1 && (
+            <div className="mt-6 flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Showing <span className="font-medium">{Math.min(dataRows.length, 1 + (currentPage - 1) * rowsPerPage)}</span> to{' '}
+                <span className="font-medium">
+                  {Math.min(currentPage * rowsPerPage, dataRows.length)}
+                </span>{' '}
+                of <span className="font-medium">{dataRows.length}</span> courses
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                
+                <div className="flex items-center space-x-1">
+                  {[...Array(Math.min(5, totalPages))].map((_, idx) => {
+                    // Create a window of 5 page buttons centered around current page
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = idx + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = idx + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + idx;
+                    } else {
+                      pageNum = currentPage - 2 + idx;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        onClick={() => goToPage(pageNum)}
+                        className={currentPage === pageNum ? "bg-blue-500 text-white" : ""}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                
+                <Button
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
-
-function SignMessage() {
-  const { isConnected } = useAccount();
-  const { connectAsync } = useConnect();
-  const {
-    signMessage,
-    data: signature,
-    error: signError,
-    isError: isSignError,
-    isPending: isSignPending,
-  } = useSignMessage();
-
-  const handleSignMessage = useCallback(async () => {
-    if (!isConnected) {
-      await connectAsync({
-        chainId: base.id,
-        connector: config.connectors[0],
-      });
-    }
-
-    signMessage({ message: "Hello from Frames v2!" });
-  }, [connectAsync, isConnected, signMessage]);
-
-  return (
-    <>
-      <Button
-        onClick={handleSignMessage}
-        disabled={isSignPending}
-        isLoading={isSignPending}
-      >
-        Sign Message
-      </Button>
-      {isSignError && renderError(signError)}
-      {signature && (
-        <div className="mt-2 text-xs">
-          <div>Signature: {signature}</div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function SendEth() {
-  const { isConnected, chainId } = useAccount();
-  const {
-    sendTransaction,
-    data,
-    error: sendTxError,
-    isError: isSendTxError,
-    isPending: isSendTxPending,
-  } = useSendTransaction();
-
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({
-      hash: data,
-    });
-
-  const toAddr = useMemo(() => {
-    // Protocol guild address
-    return chainId === base.id
-      ? "0x32e3C7fD24e175701A35c224f2238d18439C7dBC"
-      : "0xB3d8d7887693a9852734b4D25e9C0Bb35Ba8a830";
-  }, [chainId]);
-
-  const handleSend = useCallback(() => {
-    sendTransaction({
-      to: toAddr,
-      value: 1n,
-    });
-  }, [toAddr, sendTransaction]);
-
-  return (
-    <>
-      <Button
-        onClick={handleSend}
-        disabled={!isConnected || isSendTxPending}
-        isLoading={isSendTxPending}
-      >
-        Send Transaction (eth)
-      </Button>
-      {isSendTxError && renderError(sendTxError)}
-      {data && (
-        <div className="mt-2 text-xs">
-          <div>Hash: {truncateAddress(data)}</div>
-          <div>
-            Status:{" "}
-            {isConfirming
-              ? "Confirming..."
-              : isConfirmed
-              ? "Confirmed!"
-              : "Pending"}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function SignIn() {
-  const [signingIn, setSigningIn] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const [signInResult, setSignInResult] = useState<SignInCore.SignInResult>();
-  const [signInFailure, setSignInFailure] = useState<string>();
-  const { data: session, status } = useSession();
-
-  const getNonce = useCallback(async () => {
-    const nonce = await getCsrfToken();
-    if (!nonce) throw new Error("Unable to generate nonce");
-    return nonce;
-  }, []);
-
-  const handleSignIn = useCallback(async () => {
-    try {
-      setSigningIn(true);
-      setSignInFailure(undefined);
-      const nonce = await getNonce();
-      const result = await sdk.actions.signIn({ nonce });
-      setSignInResult(result);
-
-      await signIn("credentials", {
-        message: result.message,
-        signature: result.signature,
-        redirect: false,
-      });
-    } catch (e) {
-      if (e instanceof SignInCore.RejectedByUser) {
-        setSignInFailure("Rejected by user");
-        return;
-      }
-
-      setSignInFailure("Unknown error");
-    } finally {
-      setSigningIn(false);
-    }
-  }, [getNonce]);
-
-  const handleSignOut = useCallback(async () => {
-    try {
-      setSigningOut(true);
-      await signOut({ redirect: false });
-      setSignInResult(undefined);
-    } finally {
-      setSigningOut(false);
-    }
-  }, []);
-
-  return (
-    <>
-      {status !== "authenticated" && (
-        <Button onClick={handleSignIn} disabled={signingIn}>
-          Sign In with Farcaster
-        </Button>
-      )}
-      {status === "authenticated" && (
-        <Button onClick={handleSignOut} disabled={signingOut}>
-          Sign out
-        </Button>
-      )}
-      {session && (
-        <div className="my-2 p-2 text-xs overflow-x-scroll bg-gray-100 rounded-lg font-mono">
-          <div className="font-semibold text-gray-500 mb-1">Session</div>
-          <div className="whitespace-pre">
-            {JSON.stringify(session, null, 2)}
-          </div>
-        </div>
-      )}
-      {signInFailure && !signingIn && (
-        <div className="my-2 p-2 text-xs overflow-x-scroll bg-gray-100 rounded-lg font-mono">
-          <div className="font-semibold text-gray-500 mb-1">SIWF Result</div>
-          <div className="whitespace-pre">{signInFailure}</div>
-        </div>
-      )}
-      {signInResult && !signingIn && (
-        <div className="my-2 p-2 text-xs overflow-x-scroll bg-gray-100 rounded-lg font-mono">
-          <div className="font-semibold text-gray-500 mb-1">SIWF Result</div>
-          <div className="whitespace-pre">
-            {JSON.stringify(signInResult, null, 2)}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function ViewProfile() {
-  const [fid, setFid] = useState("3");
-
-  return (
-    <>
-      <div>
-        <Label
-          className="text-xs font-semibold text-gray-500 mb-1"
-          htmlFor="view-profile-fid"
-        >
-          Fid
-        </Label>
-        <Input
-          id="view-profile-fid"
-          type="number"
-          value={fid}
-          className="mb-2"
-          onChange={(e) => {
-            setFid(e.target.value);
-          }}
-          step="1"
-          min="1"
-        />
-      </div>
-      <Button
-        onClick={() => {
-          sdk.actions.viewProfile({ fid: parseInt(fid) });
-        }}
-      >
-        View Profile
-      </Button>
-    </>
-  );
-}
-
-const renderError = (error: Error | null) => {
-  if (!error) return null;
-  if (error instanceof BaseError) {
-    const isUserRejection = error.walk(
-      (e) => e instanceof UserRejectedRequestError
-    );
-
-    if (isUserRejection) {
-      return <div className="text-red-500 text-xs mt-1">Rejected by user.</div>;
-    }
-  }
-
-  return <div className="text-red-500 text-xs mt-1">{error.message}</div>;
-};

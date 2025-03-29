@@ -1,6 +1,9 @@
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
   isLoading?: boolean;
+  variant?: "default" | "outline" | "destructive" | "ghost" | "link";
+  size?: "default" | "sm" | "lg" | "icon";
+  className?: string;
 }
 
 export function Button({ children, className = "", isLoading = false, ...props }: ButtonProps) {
