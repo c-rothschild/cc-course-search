@@ -22,6 +22,9 @@ export default function Demo({ title }: { title?: string } = { title: "Colorado 
   const [filteredRows, setFilteredRows] = useState<Element[]>([]);
   const rowsPerPage = 20;
 
+  // Sorting state
+  const [sortBy, setSortBy] = useState("courseId"); // Default sort by Course ID
+
   // Academic terms options
   const terms = [
     { value: "all", label: "All Terms" },
@@ -41,7 +44,11 @@ export default function Demo({ title }: { title?: string } = { title: "Colorado 
     { value: "block5", label: "Block 5" },
     { value: "block6", label: "Block 6" },
     { value: "block7", label: "Block 7" },
-    { value: "block8", label: "Block 8" }
+    { value: "block8", label: "Block 8" },
+    { value: "blockA", label: "Block A" },
+    { value: "blockB", label: "Block B" },
+    { value: "blockC", label: "Block C" },
+    { value: "blockH", label: "Half Block" },
   ];
   
   // Program options from the original dropdown
@@ -173,6 +180,103 @@ export default function Demo({ title }: { title?: string } = { title: "Colorado 
     setCurrentPage(1);
   };
 
+  // Function to sort rows
+  const sortRows = (rows: Element[], sortBy: string): Element[] => {
+    if (rows.length === 0) return rows;
+
+    const headerRow = rows[0];
+    const dataRows = rows.slice(1);
+
+    const sortedRows = dataRows.sort((a, b) => {
+      const aText = a.textContent?.toLowerCase() || "";
+      const bText = b.textContent?.toLowerCase() || "";
+
+      if (sortBy === "courseId") {
+        // Sort by Course ID (e.g., "CS101")
+        const aMatch = aText.match(/([A-Z]{2,4})\s*(\d{1,3})/i);
+        const bMatch = bText.match(/([A-Z]{2,4})\s*(\d{1,3})/i);
+
+        if (aMatch && bMatch) {
+          const aDept = aMatch[1]; // Extract department code (e.g., "CS")
+          const bDept = bMatch[1];
+          const aNum = parseInt(aMatch[2], 10); // Extract course number (e.g., 101)
+          const bNum = parseInt(bMatch[2], 10);
+
+          // First, compare department codes alphabetically
+          const deptComparison = aDept.localeCompare(bDept);
+          if (deptComparison !== 0) {
+            return deptComparison;
+          }
+
+          // If department codes are the same, compare course numbers numerically
+          return aNum - bNum;
+        }
+      } else if (sortBy === "block") {
+        // Sort by Block (e.g., "Block 1" or "Block A")
+        const aMatch = aText.match(/block\s*(\d+|[a-z])/i);
+        const bMatch = bText.match(/block\s*(\d+|[a-z])/i);
+
+        if (aMatch && bMatch) {
+          const aBlock = aMatch[1];
+          const bBlock = bMatch[1];
+
+          // Check if both are numbers
+          if (!isNaN(Number(aBlock)) && !isNaN(Number(bBlock))) {
+            const blockComparison = Number(aBlock) - Number(bBlock);
+            if (blockComparison !== 0) {
+              return blockComparison;
+            }
+          }
+
+          // Check if both are letters
+          if (isNaN(Number(aBlock)) && isNaN(Number(bBlock))) {
+            const blockComparison = aBlock.localeCompare(bBlock);
+            if (blockComparison !== 0) {
+              return blockComparison;
+            }
+          }
+
+          // Numbers come before letters
+          if (!isNaN(Number(aBlock)) !== !isNaN(Number(bBlock))) {
+            return isNaN(Number(aBlock)) ? 1 : -1;
+          }
+        }
+
+        // If blocks are the same, sort by Course ID
+        const aCourseMatch = aText.match(/([A-Z]{2,4})\s*(\d{1,3})/i);
+        const bCourseMatch = bText.match(/([A-Z]{2,4})\s*(\d{1,3})/i);
+
+        if (aCourseMatch && bCourseMatch) {
+          const aDept = aCourseMatch[1];
+          const bDept = bCourseMatch[1];
+          const aNum = parseInt(aCourseMatch[2], 10);
+          const bNum = parseInt(bCourseMatch[2], 10);
+
+          // First, compare department codes alphabetically
+          const deptComparison = aDept.localeCompare(bDept);
+          if (deptComparison !== 0) {
+            return deptComparison;
+          }
+
+          // If department codes are the same, compare course numbers numerically
+          return aNum - bNum;
+        }
+      }
+
+      return 0;
+    });
+
+    return [headerRow, ...sortedRows];
+  };
+
+  // Apply sorting whenever rows or sortBy changes
+  useEffect(() => {
+    if (tableRows.length > 0) {
+      const sortedRows = sortRows(tableRows, sortBy);
+      setFilteredRows(sortedRows);
+    }
+  }, [tableRows, sortBy]);
+
   // Form submission handler
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,6 +323,11 @@ export default function Demo({ title }: { title?: string } = { title: "Colorado 
     setTimeout(() => {
       performSearch(selectedTerm, selectedBlock, selectedProgram);
     }, 300); // Debounce search for 300ms
+  };
+
+  // Handle sort option change
+  const handleSortChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSortBy(e.target.value);
   };
   
   // Function to check if a row matches the selected term
@@ -273,6 +382,14 @@ export default function Demo({ title }: { title?: string } = { title: "Colorado 
         return rowText.includes("block 7") || rowText.includes("block7");
       case "block8":
         return rowText.includes("block 8") || rowText.includes("block8");
+      case "blockA":
+        return rowText.includes("block a");
+      case "blockB":
+        return rowText.includes("block b");
+      case "blockC":
+        return rowText.includes("Block c");
+      case "blockH":
+        return rowText.includes("block h");
       default:
         return true;
     }
@@ -414,6 +531,37 @@ export default function Demo({ title }: { title?: string } = { title: "Colorado 
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        {/* Sort By Radio Buttons */}
+        <div className="mt-4">
+          <Label htmlFor="sort-options" className="text-sm font-medium">
+            Sort By
+          </Label>
+          <div id="sort-options" className="flex gap-4 mt-2">
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                name="sortBy"
+                value="courseId"
+                checked={sortBy === "courseId"}
+                onChange={handleSortChange}
+                className="form-radio text-blue-500"
+              />
+              <span>Course ID</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                name="sortBy"
+                value="block"
+                checked={sortBy === "block"}
+                onChange={handleSortChange}
+                className="form-radio text-blue-500"
+              />
+              <span>Block</span>
+            </label>
           </div>
         </div>
       </form>
