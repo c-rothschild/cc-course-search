@@ -455,7 +455,7 @@ export default function Demo({ title }: { title?: string } = { title: "Colorado 
 
   return (
     <div className="w-full max-w-6xl mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold text-center mb-8">Colorado College Course Search</h1>
+      <h1 className="text-3xl font-bold text-center mb-8">{title}</h1>
       
       <form onSubmit={handleSearch} className="space-y-4">
         <div className="space-y-2">

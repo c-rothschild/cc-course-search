@@ -1,7 +1,6 @@
 "use client";
 
 import axios from "axios";
-import { get } from "http";
 
 export async function getScheduleTable() {
   try {
@@ -10,7 +9,7 @@ export async function getScheduleTable() {
     const response = await axios.get(`${baseUrl}/api/course-schedule`);
     
     // Get the HTML data
-    let htmlData = response.data.data;
+    const htmlData = response.data.data;
     
     // Early return if no data
     if (!htmlData) {
@@ -23,7 +22,7 @@ export async function getScheduleTable() {
       const baseURL = "https://www.coloradocollege.edu/academics/curriculum/catalog/";
       
       // First, modify hrefs to use absolute URLs
-      let modifiedHtml: string = htmlData.replace(
+      const modifiedHtml: string = htmlData.replace(
         /<a\s+([^>]*?)href=["']([^"']+)["']([^>]*?)>/gi,
         ((match: string, beforeHref: string, hrefValue: string, afterHref: string): string => {
             // Only modify relative URLs
